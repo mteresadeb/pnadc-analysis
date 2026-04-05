@@ -4,13 +4,17 @@
 .Rproj.user/
 *.Rproj
 
-# Output folder — generated at runtime, not versioned
+# R Markdown cache and intermediates
+*_cache/
+*_files/
+*.Rmd.lock
+
+# Output folder — generated at runtime
 output/
 
 # Large data files downloaded by PNADcIBGE
 *.zip
 *.txt.gz
-*.txt
 
 # OS
 .DS_Store

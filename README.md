@@ -1,8 +1,11 @@
-# PNAD Contínua: Survey Analysis in R
+# PNAD Contínua — Survey Analysis in R
 
 A three-part analysis of Brazil's national household survey (PNAD Contínua) demonstrating
 a complete quantitative research workflow: from raw microdata to weighted estimates and
 regression models with correct inference.
+
+**The full analysis with code, outputs, and charts is available in [`pnadc_analysis.html`](pnadc_analysis.html).**
+Download the file and open it in any browser — no R installation required.
 
 ---
 
@@ -83,7 +86,7 @@ All results from PNAD Contínua 4Q2023 (N = 473,206 respondents).
 
 ### Survey design
 
-Incorporating the complex sample design changes estimates substantially. The weighted mean monthly income among employed workers is **R$ 3,063**, compared to an unweighted mean of **R$ 2,763**, an 11% difference. Design effects (DEFF) range from 1.87 in the South to 4.90 in the North, meaning that for North regional estimates, the effective sample size is less than a quarter of the nominal count. Standard errors from naive unweighted analysis are systematically underestimated.
+Incorporating the complex sample design changes estimates substantially. The weighted mean monthly income among employed workers is **R$ 3,063**, compared to an unweighted mean of **R$ 2,763** — an 11% difference. Design effects (DEFF) range from 1.87 in the South to 4.90 in the North, meaning that for North regional estimates, the effective sample size is less than a quarter of the nominal count. Standard errors from naive unweighted analysis are systematically underestimated.
 
 ### OLS regression — determinants of log income
 
@@ -125,20 +128,30 @@ Women in the labor force have 43% lower odds of being employed than men (OR = 0.
 
 ---
 
-## How to run
+## How to view the results
+
+**Option 1 — No installation needed:**
+Download [`pnadc_analysis.html`](pnadc_analysis.html) and open it in any browser.
+The file contains the complete analysis with all code, outputs, and charts rendered inline.
+
+**Option 2 — Run locally:**
 
 ```r
 # Install required packages (run once)
-install.packages(c("PNADcIBGE", "tidyverse", "survey", "srvyr", "broom"))
+install.packages(c("PNADcIBGE", "tidyverse", "survey", "srvyr", "broom", "rmarkdown"))
 
-# Run each pipeline in order
+# Render the full document
+rmarkdown::render("pnadc_analysis.Rmd")
+
+# Or run each pipeline script independently
 source("R/01_descriptive.R")
 source("R/02_survey_weights.R")
 source("R/03_regression.R")
 ```
 
-Each script downloads the microdata directly from IBGE on first run (~200 MB).
-Charts are saved to `output/` and also displayed in the RStudio Plots panel.
+Each script and the `.Rmd` document download the microdata directly from IBGE on
+first run (~200 MB). The `.Rmd` uses `cache = TRUE` on the download chunk, so
+subsequent renders use the local cache.
 
 ---
 
@@ -147,13 +160,16 @@ Charts are saved to `output/` and also displayed in the RStudio Plots panel.
 ```
 pnadc-analysis/
 │
+├── pnadc_analysis.Rmd     # R Markdown source — full analysis in one document
+├── pnadc_analysis.html    # rendered output — open in browser, no R needed
+│
 ├── R/
 │   ├── 01_descriptive.R       # data download, recoding, EDA, visualization
 │   ├── 02_survey_weights.R    # survey design, weighted estimates, DEFF
 │   └── 03_regression.R        # OLS and logistic models with svyglm()
 │
 ├── output/                    # generated at runtime — see .gitignore
-│
+├── .gitignore
 └── README.md
 ```
 
@@ -184,5 +200,5 @@ as labels may change between releases.
 ## Author
 
 **Teresa De Bastiani**
-Senior Market Research Analyst · 
+Senior Market Research Analyst · Florianópolis, Brazil
 [LinkedIn](https://linkedin.com/in/mteresadebastiani)
