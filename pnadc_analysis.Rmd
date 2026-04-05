@@ -1,0 +1,657 @@
+---
+title: "PNAD Contínua — Survey Analysis in R"
+subtitle: "Descriptive Analysis, Survey Weights, and Regression Models"
+author: "Teresa De Bastiani"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    fig_width: 9
+    fig_height: 5
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  comment = ""
+)
+```
+
+---
+
+## Overview
+
+This document presents a three-part analysis of Brazil's national household survey
+(**PNAD Contínua**, 4th quarter 2023) using microdata downloaded directly from IBGE
+via the `PNADcIBGE` package.
+
+The analysis follows a methodological progression:
+
+1. **Descriptive analysis** — distributions, cross-tabulations, and visualization
+2. **Survey weights** — why unweighted estimates are biased and how to correct them
+3. **Regression models** — OLS and logistic models with correct inference for complex survey data
+
+All categorical variables use the labels returned by `get_pnadc(labels = TRUE)`,
+which applies the official IBGE data dictionary. No numeric codes are used.
+
+---
+
+## 1. Setup
+
+```{r libraries}
+library(PNADcIBGE)
+library(tidyverse)
+library(survey)
+library(srvyr)
+library(broom)
+
+options(survey.lonely.psu = "adjust")
+
+theme_pnadc <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title       = element_text(face = "bold", size = 13),
+      plot.subtitle    = element_text(color = "grey40", size = 10),
+      plot.caption     = element_text(color = "grey55", size = 8),
+      axis.title       = element_text(size = 10),
+      legend.position  = "bottom",
+      panel.grid.minor = element_blank()
+    )
+}
+
+PALETTE <- c(
+  "main"   = "#2E86AB",
+  "accent" = "#E24B4A",
+  "mid"    = "#F18F01",
+  "soft"   = "#B0C4DE",
+  "green"  = "#4CAF50"
+)
+```
+
+---
+
+## 2. Data download
+
+PNAD Contínua microdata is downloaded directly from IBGE servers using `get_pnadc()`.
+Setting `labels = TRUE` applies the official data dictionary to all categorical variables,
+returning them as labeled factors. This eliminates the need for manual numeric recoding
+and makes the code robust to dictionary changes across survey editions.
+
+```{r download, cache=TRUE}
+vars_needed <- c(
+  "UF", "UPA", "Estrato", "V1028",
+  "V2007", "V2009", "V2010",
+  "VD3005", "VD4001", "VD4002", "VD4009", "VD4020"
+)
+
+pnadc_design <- get_pnadc(
+  year     = 2023,
+  quarter  = 4,
+  vars     = vars_needed,
+  labels   = TRUE,
+  deflator = FALSE,
+  design   = TRUE
+)
+
+cat(sprintf("Download complete: %d respondents\n", nrow(pnadc_design$variables)))
+```
+
+---
+
+## 3. Label inspection
+
+Before recoding any variable, we inspect the labels returned by the IBGE dictionary.
+The exact strings shown here are what must be used in all `case_when()` calls below.
+
+```{r labels}
+cat("V2007 (Gender):\n");      print(levels(pnadc_design$variables$V2007))
+cat("V2010 (Race):\n");        print(levels(pnadc_design$variables$V2010))
+cat("VD3005 (Schooling):\n");  print(levels(pnadc_design$variables$VD3005))
+cat("VD4001 (Labor force):\n"); print(levels(pnadc_design$variables$VD4001))
+cat("VD4002 (Employment):\n"); print(levels(pnadc_design$variables$VD4002))
+cat("VD4009 (Job type):\n");   print(levels(pnadc_design$variables$VD4009))
+```
+
+---
+
+## 4. Variable recoding
+
+All recoding is done inside the design object using `update()`. Extracting the data,
+recoding, and rebuilding the design would break the sample design structure.
+
+```{r recoding}
+pnadc_design <- update(pnadc_design,
+
+  education = factor(case_when(
+    VD3005 == "Sem instrução e menos de 1 ano de estudo" ~ "No schooling",
+    VD3005 %in% c(
+      "1 ano de estudo","2 anos de estudo","3 anos de estudo","4 anos de estudo"
+    ) ~ "Primary incomplete",
+    VD3005 %in% c(
+      "5 anos de estudo","6 anos de estudo","7 anos de estudo","8 anos de estudo"
+    ) ~ "Primary complete",
+    VD3005 %in% c(
+      "9 anos de estudo","10 anos de estudo","11 anos de estudo"
+    ) ~ "Secondary",
+    VD3005 %in% c(
+      "12 anos de estudo","13 anos de estudo","14 anos de estudo",
+      "15 anos de estudo","16 anos ou mais de estudo"
+    ) ~ "Higher education",
+    TRUE ~ NA_character_
+  ), levels = c("No schooling","Primary incomplete","Primary complete",
+                "Secondary","Higher education")),
+
+  race = factor(case_when(
+    V2010 == "Branca"   ~ "White",
+    V2010 == "Preta"    ~ "Black",
+    V2010 == "Parda"    ~ "Brown (Pardo)",
+    V2010 == "Amarela"  ~ "Asian",
+    V2010 == "Indígena" ~ "Indigenous",
+    TRUE                ~ NA_character_
+  ), levels = c("White","Black","Brown (Pardo)","Asian","Indigenous")),
+
+  macro_region = factor(case_when(
+    UF %in% c("Rondônia","Acre","Amazonas","Roraima","Pará","Amapá","Tocantins") ~ "North",
+    UF %in% c("Maranhão","Piauí","Ceará","Rio Grande do Norte","Paraíba",
+              "Pernambuco","Alagoas","Sergipe","Bahia") ~ "Northeast",
+    UF %in% c("Minas Gerais","Espírito Santo","Rio de Janeiro","São Paulo") ~ "Southeast",
+    UF %in% c("Paraná","Santa Catarina","Rio Grande do Sul") ~ "South",
+    UF %in% c("Mato Grosso do Sul","Mato Grosso","Goiás","Distrito Federal") ~ "Center-West",
+    TRUE ~ NA_character_
+  ), levels = c("Southeast","North","Northeast","South","Center-West")),
+
+  age    = as.numeric(V2009),
+  age_sq = as.numeric(V2009)^2,
+
+  log_income = ifelse(!is.na(VD4020) & VD4020 > 0, log(VD4020), NA_real_),
+
+  in_pea = !is.na(VD4001) & VD4001 == "Pessoas na força de trabalho",
+
+  employed = case_when(
+    VD4002 == "Pessoas ocupadas"    ~ 1L,
+    VD4002 == "Pessoas desocupadas" ~ 0L,
+    TRUE ~ NA_integer_
+  )
+)
+
+employed_design <- subset(pnadc_design, employed == 1L & !is.na(log_income))
+pea_design      <- subset(pnadc_design, in_pea == TRUE & !is.na(employed))
+
+# Raw data for descriptive plots
+pnadc <- pnadc_design$variables
+
+cat(sprintf("Employed with income: %d\nPEA: %d\n",
+            nrow(employed_design$variables),
+            nrow(pea_design$variables)))
+```
+
+---
+
+## 5. Descriptive analysis
+
+### 5.1 Income distribution by gender
+
+The distribution of log monthly income for employed workers shows a clear rightward
+shift for men — reflecting a persistent gender income gap across the entire distribution,
+not just at the mean.
+
+```{r plot-income-gender, fig.cap="Income distribution by gender (log scale)"}
+pnadc |>
+  filter(employed == 1L, !is.na(log_income), !is.na(V2007)) |>
+  mutate(V2007 = as.character(V2007)) |>
+  ggplot(aes(x = log_income, fill = V2007)) +
+  geom_density(alpha = 0.55, color = NA) +
+  scale_fill_manual(values = c("Homem" = unname(PALETTE["main"]),
+                               "Mulher" = unname(PALETTE["accent"]))) +
+  labs(
+    title   = "Income distribution by gender",
+    subtitle = "Employed population — log scale | PNAD Contínua 4Q2023",
+    x = "Log of monthly income (R$)", y = "Density", fill = NULL,
+    caption = "Source: IBGE, PNAD Contínua. Author's own analysis."
+  ) +
+  theme_pnadc()
+```
+
+### 5.2 Mean income by education level
+
+Income increases sharply with education. Workers with higher education earn more than
+twice the mean income of those with primary complete education.
+
+```{r plot-income-education, fig.cap="Mean income by education level"}
+pnadc |>
+  filter(employed == 1L, !is.na(VD4020), VD4020 > 0, !is.na(education)) |>
+  group_by(education) |>
+  summarise(mean_income = mean(VD4020), .groups = "drop") |>
+  ggplot(aes(x = education, y = mean_income, fill = education)) +
+  geom_col(width = 0.65, show.legend = FALSE) +
+  geom_text(aes(label = scales::dollar(mean_income, prefix = "R$",
+                                        big.mark = ".", decimal.mark = ",")),
+            vjust = -0.4, size = 3.2) +
+  scale_fill_manual(values = colorRampPalette(c(PALETTE["soft"], PALETTE["main"]))(5)) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "R$", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title    = "Mean monthly income by education level",
+    subtitle = "Employed population | PNAD Contínua 4Q2023",
+    x = NULL, y = "Mean income (R$)",
+    caption  = "Source: IBGE, PNAD Contínua. Author's own analysis."
+  ) +
+  theme_pnadc() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+### 5.3 Mean income by race and gender
+
+The racial income gap is substantial and consistent across genders. White workers
+earn more than Black and Brown workers in every gender group.
+
+```{r plot-income-race, fig.cap="Mean income by race and gender"}
+pnadc |>
+  filter(employed == 1L, !is.na(VD4020), VD4020 > 0,
+         !is.na(V2010), !is.na(V2007),
+         V2010 %in% c("Branca","Preta","Parda")) |>
+  group_by(V2010, V2007) |>
+  summarise(mean_income = mean(VD4020), .groups = "drop") |>
+  mutate(V2007 = as.character(V2007), V2010 = as.character(V2010)) |>
+  ggplot(aes(x = reorder(V2010, mean_income), y = mean_income, fill = V2007)) +
+  geom_col(position = "dodge", width = 0.65) +
+  scale_fill_manual(values = c("Homem" = unname(PALETTE["main"]),
+                               "Mulher" = unname(PALETTE["accent"]))) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "R$", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Mean income by race and gender",
+    subtitle = "Employed population | PNAD Contínua 4Q2023",
+    x = NULL, y = "Mean monthly income (R$)", fill = NULL,
+    caption  = "Source: IBGE, PNAD Contínua. Author's own analysis."
+  ) +
+  theme_pnadc()
+```
+
+### 5.4 Mean income by macro-region
+
+Regional income inequality is pronounced. Northeast workers earn on average 46% less
+than workers in the South and Southeast.
+
+```{r plot-income-region, fig.cap="Mean income by macro-region with 95% CI"}
+region_summary <- pnadc |>
+  filter(employed == 1L, !is.na(VD4020), VD4020 > 0, !is.na(macro_region)) |>
+  group_by(macro_region) |>
+  summarise(
+    mean_income = mean(VD4020),
+    se          = sd(VD4020) / sqrt(n()),
+    ci_lower    = mean_income - 1.96 * se,
+    ci_upper    = mean_income + 1.96 * se,
+    .groups     = "drop"
+  )
+
+region_summary |>
+  ggplot(aes(x = reorder(macro_region, mean_income), y = mean_income,
+             fill = reorder(macro_region, mean_income))) +
+  geom_col(width = 0.65, alpha = 0.9, show.legend = FALSE) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper),
+                width = 0.25, color = "grey30", linewidth = 0.7) +
+  geom_text(aes(label = scales::dollar(mean_income, prefix = "R$",
+                                        big.mark = ".", decimal.mark = ",")),
+            hjust = -0.15, size = 3.2, color = "grey20") +
+  scale_fill_manual(values = colorRampPalette(c(PALETTE["soft"], PALETTE["main"]))(5)) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "R$", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.20))
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Mean monthly income by macro-region",
+    subtitle = "Employed population | Error bars = 95% CI | PNAD Contínua 4Q2023",
+    x = NULL, y = "Mean monthly income (R$)",
+    caption  = "Source: IBGE, PNAD Contínua. Author's own analysis."
+  ) +
+  theme_pnadc() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+---
+
+## 6. Survey weights and complex sample design
+
+PNAD Contínua uses a complex probability sample — it is not a simple random sample.
+Ignoring the sample design leads to biased estimates and underestimated standard errors.
+
+Every estimate must account for:
+
+- **Sampling weight** (`V1028`): how many people each respondent represents
+- **Stratum** (`Estrato`): groups within which sampling was independent
+- **PSU** (`UPA`): primary sampling unit (cluster)
+
+### 6.1 Weighted vs. unweighted comparison
+
+```{r weighted-comparison}
+fmt_brl <- function(x) format(round(x, 2), big.mark = ".", decimal.mark = ",", nsmall = 2)
+
+naive_mean   <- mean(employed_design$variables$VD4020, na.rm = TRUE)
+weighted_est <- svymean(~VD4020, employed_design, na.rm = TRUE)
+ci           <- confint(weighted_est)
+
+cat(sprintf("  Unweighted mean: R$ %s\n", fmt_brl(naive_mean)))
+cat(sprintf("  Weighted mean:   R$ %s\n", fmt_brl(coef(weighted_est))))
+cat(sprintf("  SE (weighted):   R$ %s\n", fmt_brl(SE(weighted_est))))
+cat(sprintf("  95%% CI: R$ %s to R$ %s\n", fmt_brl(ci[1]), fmt_brl(ci[2])))
+```
+
+The weighted mean (R$ 3,063) is 11% higher than the unweighted mean (R$ 2,763).
+This difference arises because the sample overrepresents lower-income strata.
+Reporting unweighted estimates for a nationally representative survey is methodologically incorrect.
+
+### 6.2 Weighted mean income by education
+
+```{r weighted-education}
+svyby(~VD4020, ~education, employed_design, svymean, na.rm = TRUE) |>
+  as_tibble() |>
+  set_names(c("education", "mean_income", "se")) |>
+  mutate(
+    ci_lower = mean_income - 1.96 * se,
+    ci_upper = mean_income + 1.96 * se,
+    cv_pct   = round(se / mean_income * 100, 1)
+  ) |>
+  arrange(desc(mean_income))
+```
+
+```{r plot-weighted-education, fig.cap="Weighted mean income by education with 95% CI"}
+income_edu <- svyby(~VD4020, ~education, employed_design, svymean, na.rm = TRUE) |>
+  as_tibble() |>
+  set_names(c("education", "mean_income", "se")) |>
+  mutate(
+    ci_lower = mean_income - 1.96 * se,
+    ci_upper = mean_income + 1.96 * se
+  ) |>
+  filter(!is.na(education))
+
+ggplot(income_edu,
+       aes(x = factor(education,
+                      levels = c("No schooling","Primary incomplete",
+                                 "Primary complete","Secondary","Higher education")),
+           y = mean_income)) +
+  geom_col(fill = unname(PALETTE["main"]), width = 0.65, alpha = 0.9) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper),
+                width = 0.2, color = unname(PALETTE["accent"]), linewidth = 0.8) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "R$", big.mark = ".", decimal.mark = ","),
+    expand = expansion(mult = c(0, 0.12))
+  ) +
+  labs(
+    title    = "Weighted mean income by education level",
+    subtitle = "Error bars = 95% confidence interval | PNAD Contínua 4Q2023",
+    x = NULL, y = "Weighted mean monthly income (R$)",
+    caption  = "Source: IBGE, PNAD Contínua. Complex sample design incorporated."
+  ) +
+  theme_pnadc() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+### 6.3 Design effect (DEFF)
+
+The design effect measures how much the complex sample inflates variance compared to
+a simple random sample of the same size. DEFF = 4.90 in the North means the effective
+sample size for North regional estimates is less than a quarter of the nominal count.
+
+```{r deff}
+deff_df <- svyby(~VD4020, ~macro_region, employed_design,
+                 svymean, na.rm = TRUE, deff = TRUE) |>
+  as_tibble() |>
+  set_names(c("macro_region", "mean_income", "se", "deff")) |>
+  mutate(cv_pct = round(se / mean_income * 100, 1)) |>
+  select(macro_region, mean_income, se, cv_pct, deff)
+
+deff_df
+```
+
+```{r plot-deff, fig.cap="Design effect by macro-region", fig.height=4}
+deff_df |>
+  ggplot(aes(x = reorder(macro_region, deff), y = deff)) +
+  geom_col(fill = unname(PALETTE["mid"]), width = 0.65, alpha = 0.9) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_text(aes(label = round(deff, 2)), hjust = -0.2, size = 3.5) +
+  coord_flip() +
+  labs(
+    title    = "Design effect (DEFF) by macro-region",
+    subtitle = "DEFF > 1 = variance inflation vs. simple random sampling",
+    x = NULL, y = "Design effect",
+    caption  = "Source: IBGE, PNAD Contínua 4Q2023. Author's own analysis."
+  ) +
+  theme_pnadc()
+```
+
+### 6.4 Weighted cross-tabulation: employment by gender
+
+```{r crosstab-gender}
+as_survey_rep(pnadc_design) |>
+  filter(!is.na(employed), !is.na(V2007)) |>
+  group_by(V2007, as.character(employed)) |>
+  summarise(pct = survey_mean() * 100, .groups = "drop") |>
+  mutate(across(where(is.numeric), \(x) round(x, 1)))
+```
+
+---
+
+## 7. Regression models
+
+Both models use `svyglm()`, which correctly incorporates the complex sample design
+into the estimation — producing valid standard errors, confidence intervals, and
+p-values for population-level inference.
+
+### 7.1 OLS — determinants of log income
+
+**Model:** `log(income) ~ education + gender + race + age + age² + macro_region`
+
+Coefficients on the log scale can be interpreted as approximate percentage changes
+in income: `(exp(coef) - 1) × 100`.
+
+Reference categories: Secondary (education), Homem (gender), White (race), Southeast (region).
+
+```{r ols-model}
+# Relevel for regression reference categories
+pnadc_design <- update(pnadc_design,
+  education    = relevel(education, ref = "Secondary"),
+  race         = relevel(race,      ref = "White"),
+  macro_region = relevel(macro_region, ref = "Southeast")
+)
+employed_design <- subset(pnadc_design, employed == 1L & !is.na(log_income))
+
+model_ols <- svyglm(
+  log_income ~ education + V2007 + race + age + age_sq + macro_region,
+  design = employed_design,
+  family = gaussian()
+)
+
+tidy_ols <- tidy(model_ols, conf.int = TRUE) |>
+  filter(term != "(Intercept)") |>
+  mutate(
+    pct_effect = round((exp(estimate) - 1) * 100, 2),
+    sig = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      p.value < 0.1   ~ ".",
+      TRUE             ~ ""
+    )
+  )
+
+tidy_ols |>
+  select(term, estimate, std.error, pct_effect, p.value, sig) |>
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+```
+
+```{r plot-ols, fig.cap="OLS coefficient plot", fig.height=7}
+tidy_ols |>
+  mutate(
+    direction  = ifelse(estimate > 0, "positive", "negative"),
+    term_clean = term |>
+      str_remove("^education|^V2007|^race|^macro_region") |>
+      str_replace("age_sq", "Age²") |>
+      str_replace("^age$", "Age")
+  ) |>
+  ggplot(aes(x = estimate, y = reorder(term_clean, estimate), color = direction)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.3, orientation = "y") +
+  scale_color_manual(
+    values = c("positive" = unname(PALETTE["main"]),
+               "negative" = unname(PALETTE["accent"])),
+    guide  = "none"
+  ) +
+  labs(
+    title    = "OLS regression — determinants of log income",
+    subtitle = "Coefficients with 95% CI | svyglm() with PNAD Contínua design",
+    x = "Coefficient (log income scale)", y = NULL,
+    caption  = "Reference: Secondary (education), Homem (gender), White (race), Southeast (region).\nSource: IBGE, PNAD Contínua 4Q2023."
+  ) +
+  theme_pnadc()
+```
+
+**Key findings:**
+
+- Workers with **higher education** earn **70% more** than those with secondary education, controlling for all other factors
+- **Women** earn **28% less** than men with equivalent education, race, age, and region
+- **Black** and **Brown (Pardo)** workers earn approximately **20% less** than White workers
+- **Northeast** workers earn **38% less** than Southeast workers
+
+### 7.2 Logistic — probability of employment in the PEA
+
+**Model:** `P(employed = 1) ~ education + gender + race + age + age² + macro_region`
+
+The model is restricted to the **economically active population** (PEA) — people who are
+either employed or actively seeking employment. This is the correct population for modeling
+employment probability. Including inactive people (retired, students, homemakers) would
+dilute the relationship between predictors and employment status.
+
+Results are reported as **odds ratios** (OR > 1 = higher odds of employment).
+
+```{r logit-model}
+pea_design <- subset(pnadc_design, in_pea == TRUE & !is.na(employed))
+
+model_logit <- svyglm(
+  employed ~ education + V2007 + race + age + age_sq + macro_region,
+  design = pea_design,
+  family = quasibinomial()
+)
+
+tidy_logit <- tidy(model_logit, conf.int = TRUE, exponentiate = TRUE) |>
+  filter(term != "(Intercept)") |>
+  mutate(
+    sig = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      p.value < 0.1   ~ ".",
+      TRUE             ~ ""
+    )
+  )
+
+tidy_logit |>
+  rename(odds_ratio = estimate, or_ci_low = conf.low, or_ci_high = conf.high) |>
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+```
+
+```{r plot-logit, fig.cap="Logistic regression — odds ratios for employment", fig.height=7}
+tidy_logit |>
+  mutate(
+    direction  = ifelse(estimate > 1, "higher odds", "lower odds"),
+    term_clean = term |>
+      str_remove("^education|^V2007|^race|^macro_region") |>
+      str_replace("age_sq", "Age²") |>
+      str_replace("^age$", "Age")
+  ) |>
+  ggplot(aes(x = estimate, y = reorder(term_clean, estimate), color = direction)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_point(size = 3) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.3, orientation = "y") +
+  scale_x_log10() +
+  scale_color_manual(
+    values = c("higher odds" = unname(PALETTE["green"]),
+               "lower odds"  = unname(PALETTE["accent"])),
+    guide  = "none"
+  ) +
+  labs(
+    title    = "Logistic regression — odds ratios for employment",
+    subtitle = "OR with 95% CI (log scale) | svyglm() with PNAD Contínua design",
+    x = "Odds ratio (log scale) — OR > 1 = higher probability of employment",
+    y = NULL,
+    caption  = "Reference: Secondary (education), Homem (gender), White (race), Southeast (region).\nSource: IBGE, PNAD Contínua 4Q2023."
+  ) +
+  theme_pnadc()
+```
+
+```{r plot-edu-or, fig.cap="Employment odds ratios by education level", fig.height=4}
+tidy_logit |>
+  filter(str_detect(term, "^education")) |>
+  mutate(
+    term_clean = str_remove(term, "^education"),
+    term_clean = factor(term_clean,
+      levels = c("No schooling","Primary incomplete","Primary complete","Higher education")),
+    direction  = ifelse(estimate > 1, "higher odds", "lower odds")
+  ) |>
+  ggplot(aes(x = estimate, y = reorder(term_clean, estimate), color = direction)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey50") +
+  geom_point(size = 4) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high),
+                width = 0.25, orientation = "y", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("OR = %.2f", estimate)),
+            hjust = -0.2, size = 3.2, color = "grey20") +
+  scale_x_log10(limits = c(0.5, 2.5)) +
+  scale_color_manual(
+    values = c("higher odds" = unname(PALETTE["main"]),
+               "lower odds"  = unname(PALETTE["accent"])),
+    guide  = "none"
+  ) +
+  labs(
+    title    = "Employment odds ratios by education level",
+    subtitle = "Reference category: Secondary | PEA | PNAD Contínua 4Q2023",
+    x = "Odds ratio (log scale) — OR > 1 = higher odds of employment vs. Secondary",
+    y = NULL,
+    caption  = "Source: IBGE, PNAD Contínua. svyglm() with quasibinomial() and complex sample design."
+  ) +
+  theme_pnadc() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+**Key findings:**
+
+- **Women** in the labor force have **43% lower odds** of being employed than men (OR = 0.57), the strongest predictor in the model
+- Workers with **higher education** have **57% higher odds** of employment than those with secondary education (OR = 1.57)
+- **Black** workers have 22% lower odds of employment than White workers (OR = 0.78)
+- The **South** shows substantially higher employment odds than the Southeast reference (OR = 1.68)
+
+---
+
+## 8. Summary
+
+This analysis demonstrates a complete survey data workflow using PNAD Contínua:
+
+| Pipeline | Key demonstration |
+|---|---|
+| Descriptive | Data download, label-based recoding, ggplot2 visualization |
+| Survey weights | Correct weighted estimation, DEFF, `svyby()`, `srvyr` |
+| Regression | `svyglm()` for OLS and logistic models with valid inference |
+
+The methodological core of this project is the comparison between naive unweighted
+analysis and design-corrected estimates. With design effects reaching 4.90 in the North,
+ignoring the sample structure would produce confidence intervals that are less than half
+the correct width for regional estimates.
+
+---
+
+*Data: IBGE, PNAD Contínua 4Q2023. Analysis: Teresa De Bastiani.*
