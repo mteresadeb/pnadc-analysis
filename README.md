@@ -4,8 +4,8 @@ A three-part analysis of Brazil's national household survey (PNAD Contínua) dem
 a complete quantitative research workflow: from raw microdata to weighted estimates and
 regression models with correct inference.
 
-**The full analysis with code, outputs, and charts is available in [`pnadc_analysis.html`](pnadc_analysis.html).**
-Download the file and open it in any browser — no R installation required.
+**The full analysis with code, outputs, and charts is available at [rpubs.com/mteresadebastiani/pnadc-analysis](https://rpubs.com/mteresadebastiani/pnadc-analysis).**
+No R installation required — opens directly in the browser.
 
 ---
 
