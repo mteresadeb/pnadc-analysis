@@ -1,4 +1,4 @@
-# PNAD Contínua: Survey Analysis in R
+# PNAD Contínua — Survey Analysis in R
 
 A three-part analysis of Brazil's national household survey (PNAD Contínua) demonstrating
 a complete quantitative research workflow: from raw microdata to weighted estimates and
@@ -79,13 +79,49 @@ Key outputs: `output/09` to `output/11`, model tables as `.csv`
 
 ## Selected findings
 
-| Result | Value |
-|---|---|
-| Gender income gap (weighted, OLS) | Women earn ~30% less than men, controlling for education, race, age and region |
-| Education premium | Higher education associated with ~57% income increase vs. secondary |
-| Northeast penalty | Northeast residents earn ~40% less than Southeast, controlling for other factors |
-| Design effect (North) | DEFF = 4.90 — unweighted SE underestimates true variance by factor of ~2.2 |
-| Employment — higher education | OR = 0.79 vs. secondary — more educated people are less likely to be formally employed (more self-employed, informal, or inactive) |
+All results from PNAD Contínua 4Q2023 (N = 473,206 respondents).
+
+### Survey design
+
+Incorporating the complex sample design changes estimates substantially. The weighted mean monthly income among employed workers is **R$ 3,063**, compared to an unweighted mean of **R$ 2,763** — an 11% difference. Design effects (DEFF) range from 1.87 in the South to 4.90 in the North, meaning that for North regional estimates, the effective sample size is less than a quarter of the nominal count. Standard errors from naive unweighted analysis are systematically underestimated.
+
+### OLS regression — determinants of log income
+
+Controlling for education, race, age, and region simultaneously:
+
+| Predictor | Effect on income | Significance |
+|---|---|---|
+| Higher education (vs. Secondary) | +70% | *** |
+| Primary complete (vs. Secondary) | -19% | *** |
+| Primary incomplete (vs. Secondary) | -35% | *** |
+| No schooling (vs. Secondary) | -36% | *** |
+| Mulher (vs. Homem) | -28% | *** |
+| Black (vs. White) | -20% | *** |
+| Brown/Pardo (vs. White) | -20% | *** |
+| Indigenous (vs. White) | -27% | *** |
+| Northeast (vs. Southeast) | -38% | *** |
+| North (vs. Southeast) | -21% | *** |
+| South (vs. Southeast) | +5% | *** |
+| Center-West (vs. Southeast) | +10% | *** |
+
+The education premium is the strongest predictor: workers with higher education earn 70% more than those with secondary education, after controlling for all other factors. The gender gap persists at 28% even after controlling for education, race, age, and region.
+
+### Logistic regression — employment in the PEA
+
+Among people in the labor force (employed + unemployed), controlling for the same covariates:
+
+| Predictor | Odds ratio | Significance |
+|---|---|---|
+| Higher education (vs. Secondary) | 1.57 | *** |
+| Primary complete (vs. Secondary) | 0.93 | . |
+| Primary incomplete (vs. Secondary) | 0.90 | . |
+| Mulher (vs. Homem) | 0.57 | *** |
+| Black (vs. White) | 0.78 | *** |
+| Brown/Pardo (vs. White) | 0.85 | *** |
+| Northeast (vs. Southeast) | 0.71 | *** |
+| South (vs. Southeast) | 1.68 | *** |
+
+Women in the labor force have 43% lower odds of being employed than men (OR = 0.57), the largest single predictor in the model. Workers with higher education have 57% higher odds of employment than those with secondary education (OR = 1.57). The South has substantially higher employment odds than the Southeast reference category (OR = 1.68).
 
 ---
 
@@ -148,5 +184,5 @@ as labels may change between releases.
 ## Author
 
 **Teresa De Bastiani**
-Senior Market Research Analyst · 
+Senior Market Research Analyst · Florianópolis, Brazil
 [LinkedIn](https://linkedin.com/in/mteresadebastiani)
