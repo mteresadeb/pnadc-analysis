@@ -1,0 +1,17 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# Output folder — generated at runtime, not versioned
+output/
+
+# Large data files downloaded by PNADcIBGE
+*.zip
+*.txt.gz
+*.txt
+
+# OS
+.DS_Store
+Thumbs.db
