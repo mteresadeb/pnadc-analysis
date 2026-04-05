@@ -1,4 +1,4 @@
-# PNAD Contínua — Survey Analysis in R
+# PNAD Contínua: Survey Analysis in R
 
 A three-part analysis of Brazil's national household survey (PNAD Contínua) demonstrating
 a complete quantitative research workflow: from raw microdata to weighted estimates and
@@ -200,5 +200,5 @@ as labels may change between releases.
 ## Author
 
 **Teresa De Bastiani**
-Senior Market Research Analyst · Florianópolis, Brazil
+Senior Market Research Analyst · 
 [LinkedIn](https://linkedin.com/in/mteresadebastiani)
