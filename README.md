@@ -1,4 +1,4 @@
-# PNAD Contínua — Survey Analysis in R
+# PNAD Contínua: Survey Analysis in R
 
 A three-part analysis of Brazil's national household survey (PNAD Contínua) demonstrating
 a complete quantitative research workflow: from raw microdata to weighted estimates and
@@ -83,7 +83,7 @@ All results from PNAD Contínua 4Q2023 (N = 473,206 respondents).
 
 ### Survey design
 
-Incorporating the complex sample design changes estimates substantially. The weighted mean monthly income among employed workers is **R$ 3,063**, compared to an unweighted mean of **R$ 2,763** — an 11% difference. Design effects (DEFF) range from 1.87 in the South to 4.90 in the North, meaning that for North regional estimates, the effective sample size is less than a quarter of the nominal count. Standard errors from naive unweighted analysis are systematically underestimated.
+Incorporating the complex sample design changes estimates substantially. The weighted mean monthly income among employed workers is **R$ 3,063**, compared to an unweighted mean of **R$ 2,763**, an 11% difference. Design effects (DEFF) range from 1.87 in the South to 4.90 in the North, meaning that for North regional estimates, the effective sample size is less than a quarter of the nominal count. Standard errors from naive unweighted analysis are systematically underestimated.
 
 ### OLS regression — determinants of log income
 
@@ -184,5 +184,5 @@ as labels may change between releases.
 ## Author
 
 **Teresa De Bastiani**
-Senior Market Research Analyst · Florianópolis, Brazil
+Senior Market Research Analyst · 
 [LinkedIn](https://linkedin.com/in/mteresadebastiani)
