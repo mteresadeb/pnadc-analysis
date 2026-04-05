@@ -131,7 +131,7 @@ Women in the labor force have 43% lower odds of being employed than men (OR = 0.
 ## How to view the results
 
 **Option 1 — No installation needed:**
-Download [`pnadc_analysis.html`](pnadc_analysis.html) and open it in any browser.
+Click on the link: [rpubs.com/mteresadebastiani/pnadc-analysis](https://rpubs.com/mteresadebastiani/pnadc-analysis) 
 The file contains the complete analysis with all code, outputs, and charts rendered inline.
 
 **Option 2 — Run locally:**
